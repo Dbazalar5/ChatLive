@@ -1,3 +1,10 @@
+// Utilidad para limpiar textos y evitar ataques XSS
+function escapeHTML(str) {
+  const div = document.createElement("div");
+  div.innerText = str;
+  return div.innerHTML;
+}
+
 function loadSocket(callback) {
   const script = document.createElement("script");
   script.src = "https://cdn.socket.io/4.7.2/socket.io.min.js";
@@ -9,6 +16,8 @@ function loadSocket(callback) {
   const API_URL = "https://apischats.kingtechlocal.biz";
   const SOCKET_URL = "https://socket.kingtechlocal.biz";
   let platform_id = 1;
+  // Memoria del navegador para el F5
+  let currentConversationId = localStorage.getItem("kingtech_conv_id") || null;
 
   // ===== BOTÓN FLOTANTE =====
   const button = document.createElement("div");
@@ -28,6 +37,10 @@ function loadSocket(callback) {
     display: "none", flexDirection: "column", overflow: "hidden", zIndex: "9998", fontFamily: "Arial",
   });
 
+  const savedNombre = localStorage.getItem("kingtech_nombre") || "";
+  const savedCorreo = localStorage.getItem("kingtech_correo") || "";
+  const savedDni = localStorage.getItem("kingtech_dni") || "";
+
   modal.innerHTML = `
     <div style="background:#16a34a;color:white;padding:12px;display:flex;justify-content:space-between;align-items:center;">
       <span>Soporte en línea</span>
@@ -35,10 +48,11 @@ function loadSocket(callback) {
     </div>
     <div id="widget-body" style="flex:1;padding:15px;overflow:auto;display:flex;flex-direction:column;">
       <form id="start-chat-form">
-        <input placeholder="Nombre" required name="nombre" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
-        <input placeholder="Correo" required name="correo" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
-        <input placeholder="DNI" required name="dni" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
-        <input placeholder="Player ID (opcional)" name="player_id" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
+        <!-- SE AGREGARON LÍMITES DE CARACTERES (maxlength) -->
+        <input placeholder="Nombre" required name="nombre" value="${savedNombre}" maxlength="50" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
+        <input placeholder="Correo" required type="email" name="correo" value="${savedCorreo}" maxlength="50" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
+        <input placeholder="DNI" required name="dni" value="${savedDni}" maxlength="15" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
+        <input placeholder="Player ID (opcional)" name="player_id" maxlength="30" style="width:100%;margin-bottom:10px;padding:8px;box-sizing:border-box;" />
         <button type="submit" style="width:100%;padding:10px;background:#16a34a;color:white;border:none;border-radius:4px;cursor:pointer;">
           Ingresar al Chat
         </button>
@@ -47,7 +61,13 @@ function loadSocket(callback) {
   `;
   document.body.appendChild(modal);
 
-  button.onclick = () => modal.style.display = modal.style.display === "none" ? "flex" : "none";
+  button.onclick = () => {
+    modal.style.display = modal.style.display === "none" ? "flex" : "none";
+    // Si ya teníamos una sesión activa guardada (F5), forzamos el inicio automático y saltamos el form
+    if (currentConversationId && modal.style.display === "flex" && document.getElementById("start-chat-form")) {
+       document.getElementById("start-chat-form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    }
+  };
   document.getElementById("close-widget-btn").onclick = () => modal.style.display = "none";
 
   // ===== ZOOM MODAL =====
@@ -57,39 +77,24 @@ function loadSocket(callback) {
       position: "fixed", inset: "0", background: "rgba(0,0,0,0.85)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: "10000", padding: "20px"
     });
-    
-    const relativeContainer = document.createElement("div");
-    relativeContainer.style.position = "relative";
-    
-    const closeBtn = document.createElement("button");
-    closeBtn.innerText = "✖";
+    const relativeContainer = document.createElement("div"); relativeContainer.style.position = "relative";
+    const closeBtn = document.createElement("button"); closeBtn.innerText = "✖";
     Object.assign(closeBtn.style, {
       position: "absolute", top: "-15px", right: "-15px", background: "#374151", color: "white",
       borderRadius: "50%", width: "30px", height: "30px", border: "1px solid #4b5563", cursor: "pointer", zIndex: "10001"
     });
-    
-    const img = document.createElement("img");
-    img.src = url;
-    let currentScale = 1;
-    Object.assign(img.style, {
-      maxWidth: "100%", maxHeight: "90vh", borderRadius: "8px", transition: "transform 0.2s ease", cursor: "zoom-in"
-    });
+    const img = document.createElement("img"); img.src = url; let currentScale = 1;
+    Object.assign(img.style, { maxWidth: "100%", maxHeight: "90vh", borderRadius: "8px", transition: "transform 0.2s ease", cursor: "zoom-in" });
     
     img.onclick = (e) => {
-      e.stopPropagation();
-      currentScale = currentScale === 1 ? 2 : currentScale === 2 ? 3 : 1;
-      img.style.maxHeight = currentScale > 1 ? "none" : "90vh";
-      img.style.maxWidth = currentScale > 1 ? "none" : "100%";
+      e.stopPropagation(); currentScale = currentScale === 1 ? 2 : currentScale === 2 ? 3 : 1;
+      img.style.maxHeight = currentScale > 1 ? "none" : "90vh"; img.style.maxWidth = currentScale > 1 ? "none" : "100%";
       img.style.transform = `scale(${currentScale})`;
     };
     
     closeBtn.onclick = () => document.body.removeChild(zoomModal);
     zoomModal.onclick = (e) => { if (e.target === zoomModal) document.body.removeChild(zoomModal); };
-    
-    relativeContainer.appendChild(closeBtn);
-    relativeContainer.appendChild(img);
-    zoomModal.appendChild(relativeContainer);
-    document.body.appendChild(zoomModal);
+    relativeContainer.appendChild(closeBtn); relativeContainer.appendChild(img); zoomModal.appendChild(relativeContainer); document.body.appendChild(zoomModal);
   };
 
   // ===== INICIAR CHAT / RECUPERAR =====
@@ -99,8 +104,11 @@ function loadSocket(callback) {
 
     const formData = new FormData(e.target);
     const data = {
-      platform_id, nombre: formData.get("nombre"), correo: formData.get("correo"),
-      dni: formData.get("dni"), player_id: formData.get("player_id") || null,
+      platform_id, 
+      nombre: escapeHTML(formData.get("nombre") || savedNombre).substring(0, 50), 
+      correo: escapeHTML(formData.get("correo") || savedCorreo).substring(0, 50),
+      dni: escapeHTML(formData.get("dni") || savedDni).substring(0, 15), 
+      player_id: escapeHTML(formData.get("player_id")) || null,
     };
 
     try {
@@ -111,29 +119,34 @@ function loadSocket(callback) {
       const result = await res.json();
       const conversationId = result.conversation_id;
 
-      // HTML del Chat, Preview y la Encuesta Oculta
+      // GUARDAR DATOS EN MEMORIA LOCAL DEL NAVEGADOR PARA SOBREVIVIR AL F5
+      localStorage.setItem("kingtech_conv_id", conversationId);
+      localStorage.setItem("kingtech_nombre", data.nombre);
+      localStorage.setItem("kingtech_correo", data.correo);
+      localStorage.setItem("kingtech_dni", data.dni);
+      currentConversationId = conversationId;
+
       document.getElementById("widget-body").innerHTML = `
         <div style="display:flex;flex-direction:column;height:100%;">
           <div style="font-size:13px;margin-bottom:8px;border-bottom:1px solid #eee;padding-bottom:5px;">
             <p style="color:#111827;margin:0 0 4px 0;"><strong>ID Conversación:</strong> #${conversationId}</p>
             <p style="color:#111827;margin:0 0 4px 0;"><strong>Estado:</strong> 
-              <span id="chat-status" style="color: #ca8a04; font-weight: bold;">${result.estado}</span>
+              <span id="chat-status" style="color: #ca8a04; font-weight: bold;">${escapeHTML(result.estado)}</span>
             </p>
           </div>
           
           <div id="chat-messages" style="flex:1;overflow-y:auto;margin-bottom:10px;display:flex;flex-direction:column;gap:8px;"></div>
           <div id="typing-indicator" style="font-size:12px;color:gray;min-height:16px;margin-bottom:4px;"></div>
-          
           <div id="preview-container" style="display:none; position:relative; margin-bottom:10px; border:1px solid #ccc; padding:5px; border-radius:4px; background:#f9fafb; width:max-content;">
             <button id="cancel-preview-btn" style="position:absolute; top:-8px; right:-8px; background:#ef4444; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:10px; cursor:pointer;">✖</button>
             <img id="preview-img" style="max-height:80px; border-radius:4px; display:none;" />
             <div id="preview-pdf" style="display:none; color:#2563eb; font-size:12px;">📄 Documento</div>
           </div>
-
           <div id="chat-input-container" style="display:flex;gap:5px;align-items:center;">
             <input type="file" id="chat-file" accept="image/*,.pdf" style="display:none;" />
             <label for="chat-file" style="background:#4b5563;color:white;padding:8px 12px;border-radius:4px;cursor:pointer;margin:0;">📎</label>
-            <input id="chat-input" placeholder="Mensaje..." style="flex:1;padding:8px;border:1px solid #ccc;border-radius:4px;" />
+            <!-- LÍMITE DE ENTRADA: 255 -->
+            <input id="chat-input" maxlength="255" placeholder="Mensaje..." style="flex:1;padding:8px;border:1px solid #ccc;border-radius:4px;" />
             <button id="chat-send" style="background:#16a34a;color:white;border:none;padding:8px 12px;border-radius:4px;cursor:pointer;">Enviar</button>
           </div>
 
@@ -174,8 +187,7 @@ function loadSocket(callback) {
       document.getElementById("cancel-preview-btn").onclick = clearPreview;
       inputUpload.addEventListener("change", (e) => { if (e.target.files[0]) showPreview(e.target.files[0]); });
       inputChat.addEventListener("paste", (e) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
+        const items = e.clipboardData?.items; if (!items) return;
         for (let i = 0; i < items.length; i++) {
            if (items[i].type.indexOf("image") !== -1) { showPreview(items[i].getAsFile()); e.preventDefault(); break; }
         }
@@ -194,21 +206,31 @@ function loadSocket(callback) {
           div.style.wordBreak = "break-word"; div.style.fontSize = "14px"; div.style.lineHeight = "1.4";
 
           if (data.sender_type === "client") {
-            div.style.background = "#e5e7eb"; div.style.color = "#111827";
-            div.style.alignSelf = "flex-end"; div.style.borderBottomRightRadius = "2px";
+            div.style.background = "#e5e7eb"; div.style.color = "#111827"; div.style.alignSelf = "flex-end"; div.style.borderBottomRightRadius = "2px";
           } else {
-            div.style.background = "#16a34a"; div.style.color = "white";
-            div.style.alignSelf = "flex-start"; div.style.borderBottomLeftRadius = "2px";
+            div.style.background = "#16a34a"; div.style.color = "white"; div.style.alignSelf = "flex-start"; div.style.borderBottomLeftRadius = "2px";
           }
 
           const msg = data.mensaje || "";
+          
+          // CONSTRUCCIÓN SEGURA MEDIANTE DOM DIRECTO (XSS Y SQL PREVANTION)
           if (msg.endsWith(".png") || msg.endsWith(".jpg") || msg.endsWith(".jpeg") || msg.endsWith(".webp")) {
             const fullUrl = msg.startsWith("http") ? msg : `${API_URL}${msg}`;
-            div.innerHTML = `<img src="${fullUrl}" style="max-width:100%; border-radius:8px; display:block; cursor:zoom-in;" onclick="openZoomModal('${fullUrl}')" />`;
+            const imgE = document.createElement("img");
+            imgE.src = fullUrl;
+            imgE.style.cssText = "max-width:100%; border-radius:8px; display:block; cursor:zoom-in;";
+            imgE.onclick = () => openZoomModal(fullUrl);
+            div.appendChild(imgE);
           } else if (msg.endsWith(".pdf")) {
             const fullUrl = msg.startsWith("http") ? msg : `${API_URL}${msg}`;
-            div.innerHTML = `<a href="${fullUrl}" target="_blank" style="color:${data.sender_type === 'client' ? '#2563eb' : '#fff'};font-weight:bold;text-decoration:underline;">📄 Ver Documento PDF</a>`;
+            const aE = document.createElement("a");
+            aE.href = fullUrl;
+            aE.target = "_blank";
+            aE.style.cssText = `color:${data.sender_type === 'client' ? '#2563eb' : '#fff'};font-weight:bold;text-decoration:underline;`;
+            aE.innerText = "📄 Ver Documento PDF";
+            div.appendChild(aE);
           } else {
+            // INNERTEXT nos salva de cualquier código malicioso (XSS) inyectado por el usuario
             div.innerText = msg;
           }
           container.appendChild(div);
@@ -229,25 +251,23 @@ function loadSocket(callback) {
           document.getElementById("chat-status").style.color = "#16a34a";
         });
 
-        // ACTIVA LA ENCUESTA AL CERRAR Y OCULTA EL INPUT
         socket.on("chat_closed", (data) => {
+           // LIMPIAR MEMORIA AL CERRAR, ASÍ EL F5 REPETIRÁ LA ENCUESTA O PEDIRÁ NUEVO INGRESO
+           localStorage.removeItem("kingtech_conv_id");
+           currentConversationId = null;
+
            document.getElementById("chat-status").innerText = "CERRADO";
            document.getElementById("chat-status").style.color = "#ef4444";
-           // Desaparece todo el form
            document.getElementById("chat-input-container").style.display = "none";
-           if (document.getElementById("preview-container")) {
-               document.getElementById("preview-container").style.display = "none";
-           }
-           // Muestra la encuesta
+           if (document.getElementById("preview-container")) document.getElementById("preview-container").style.display = "none";
            document.getElementById("survey-container").style.display = "block";
            
-           // Hace scroll down automático
            const container = document.getElementById("chat-messages");
            container.scrollTop = container.scrollHeight;
         });
 
-        // RECUPERAR HISTÓRICO SI FUE RESUMIDO
-        if (result.resumed) {
+        // RECUPERAR HISTÓRICO AL INICIAR/RECARGAR (F5)
+        if (result.resumed || currentConversationId) {
           try {
             const historyRes = await fetch(`${API_URL}/api/conversations/${conversationId}/messages`);
             const msgs = await historyRes.json();
@@ -260,23 +280,19 @@ function loadSocket(callback) {
         stars.forEach(star => {
            star.onclick = async (e) => {
               const val = e.target.getAttribute("data-val");
-              // Colorear de amarillo hasta la seleccionada
               stars.forEach(s => {
                  s.style.color = s.getAttribute("data-val") <= val ? "#eab308" : "#d1d5db";
-                 s.style.pointerEvents = "none"; // Evita múltiples clics (solo votan 1 vez)
+                 s.style.pointerEvents = "none"; 
               });
-              // Enviar rating a backend
               await fetch(`${API_URL}/api/client/conversations/${conversationId}/survey`, {
                  method: "POST", headers: { "Content-Type": "application/json" },
                  body: JSON.stringify({ rating: val })
               });
-              
-              // Mostrar gracias
               document.getElementById("survey-thank-you").style.display = "block";
            };
         });
 
-        // ENVÍO DE MENSAJE
+        // ENVÍO DE MENSAJE SECURE
         const sendTextMessage = async (mensaje) => {
           if(!mensaje) return;
           await fetch(`${API_URL}/api/client/conversations/${conversationId}/message`, {
@@ -285,7 +301,10 @@ function loadSocket(callback) {
         };
 
         const handleInteractiveSend = async () => {
-          const mensajeTexto = inputChat.value.trim();
+          let mensajeTexto = inputChat.value.trim();
+          // CORTAMOS CUALQUIER EXCESO (SEGURIDAD EXTRA)
+          if (mensajeTexto.length > 255) mensajeTexto = mensajeTexto.substring(0, 255);
+
           if (!mensajeTexto && !currentFile) return;
           let fileUrl = null;
 
